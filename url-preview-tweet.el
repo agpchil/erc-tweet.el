@@ -1,4 +1,4 @@
-;;; erc-tweet.el --- shows text of a tweet when an url is posted in erc buffers
+;;; url-preview-tweet.el --- shows text of a tweet when an url is posted in buffers
 
 ;; Copyright (C) 2012  Raimon Grau
 
@@ -21,41 +21,39 @@
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;;
-;; Show inlined tweets in erc buffers.
-;;
-;;; Installation:
-;;
-;; usage:
-;;
-;; (require 'erc-tweet)
-;; (add-to-list 'erc-modules 'tweet)
-;; (erc-update-modules)
-;;
-;; Or `(require 'erc-tweet)` and  `M-x customize-option erc-modules RET`
-;;
-;; This plugin subscribes to hooks `erc-insert-modify-hook` and
-;; `erc-send-modify-hook` to download and show tweets.
 
 ;;; Code:
+(require 'url-preview)
 
-(require 'erc)
-(require 'url-queue)
+(defgroup url-preview-tweet nil
+  "Url preview for twitter."
+  :prefix "url-preview-tweet"
+  :group 'url-preview)
 
-(defgroup erc-tweet nil
-  "Enable tweet."
-  :group 'erc)
+(defvar url-preview-tweet
+  '(:name "tweet"
+    :pattern "https?://\\(?:[^/]*\\)?twitter.com/.+/status/[0-9]+"
+    :retrieve nil
+    :retrieve-url url-preview-tweet-correct-url
+    :retrieve-args nil
+    :retrieve-error nil
+    :retrieve-success nil
+    :on-success (url-preview-cb-save-cache
+                 url-preview-tweet-cb-text
+                 url-preview-tweet-cb-cleanup-text
+                 url-preview-cb-message)
+    :on-error (url-preview-cb-error-message)
+    :enabled nil
+    :buffer nil
+    :display-at url-preview-display-at-nextline
+    :display url-preview-display)
+  "")
 
-(defcustom erc-tweet-regex "https?://\\(?:[^/]*\\)?twitter.com/.+/status/[0-9]+"
-  "Regex to mach URLs to be downloaded"
-  :group 'erc-tweet
-  :type '(regexp :tag "Regex"))
-
-(defun erc-tweet-strip-tags (str)
+(defun url-preview-tweet-cb-cleanup-text (module str)
   "Strip tags in a regex. Naive, I know."
-  (replace-regexp-in-string "<.+?>" "" str))
+  (replace-regexp-in-string "<.+?>\\|\n$" "" str))
 
-(defun erc-tweet-text ()
+(defun url-preview-tweet-cb-text (module)
   "Extract the tweet text from the retrieved HTML"
   (goto-char (point-min))
   (search-forward-regexp "js-tweet-text tweet-text[^>]*>")
@@ -66,70 +64,15 @@
     (backward-char)
     (string-as-multibyte (buffer-substring-no-properties pt-before (point)))))
 
-(defvar erc-tweet-cleanup-text 'erc-tweet-strip-tags)
-
-
-(defun erc-tweet-insert (msg marker)
-  "Insert MSG before MARKER."
-  (with-current-buffer (marker-buffer marker)
-    (save-excursion
-      (let ((inhibit-read-only t))
-        (goto-char (marker-position marker))
-        (let ((pt-before (point)))
-          (insert-before-markers msg)
-          (put-text-property pt-before (point) 'read-only t))))))
-
-(defun erc-tweet-error (error-info marker)
-  "Insert error text from ERROR-INFO before MARKER."
-  (let* ((name (car error-info))
-         (data (cadr error-info))
-         (msg (format "[tweet/%s] - %s\n" name data)))
-    (erc-tweet-insert msg marker)))
-
-(defun erc-tweet-callback (status marker)
-  "Callback function for url-queue-retrieve."
-  (interactive)
-  (let ((error-info (plist-get status :error)))
-    (cond (error-info
-           (erc-tweet-error error-info marker))
-          (t (erc-tweet marker)))))
-
-(defun erc-tweet (marker)
-  "Extract the tweet text and insert before MARKER."
-  (let* ((tweet-text (erc-tweet-text))
-         (msg (concat "[tweet] - "
-                      (funcall erc-tweet-cleanup-text tweet-text))))
-    (erc-tweet-insert msg marker)))
-
-(defun erc-tweet-correct-url (url)
+(defun url-preview-tweet-correct-url (url)
   "Change the url to go to the non-mobile site."
-  (when (and url (string-match erc-tweet-regex url))
-    ;; go to the non-mobile tweet
-    (replace-regexp-in-string "mobile\." "" url)))
-
-(defun erc-tweet-show-tweet ()
-  (interactive)
-  (goto-char (point-min))
-  (search-forward "http" nil t)
-  (let ((url (erc-tweet-correct-url (thing-at-point 'url))))
-    (when url
-      (url-queue-retrieve url
-                          'erc-tweet-callback
-                          (list
-                           (point-max-marker))
-                          t))))
+  ;; go to the non-mobile tweet
+  (replace-regexp-in-string "mobile\." "" url))
 
 ;;;###autoload
-(eval-after-load 'erc
-  '(define-erc-module tweet nil
-     "Display inlined twits in ERC buffer"
-     ((add-hook 'erc-insert-modify-hook 'erc-tweet-show-tweet t)
-      (add-hook 'erc-send-modify-hook 'erc-tweet-show-tweet t))
-     ((remove-hook 'erc-insert-modify-hook 'erc-tweet-show-tweet)
-      (remove-hook 'erc-send-modify-hook 'erc-tweet-show-tweet))
-     t))
+(eval-after-load 'url-preview
+  '(url-preview-module-define url-preview-tweet))
 
-;;; Code:
 
-(provide 'erc-tweet)
-;;; erc-tweet.el ends here
+(provide 'url-preview-tweet)
+;;; url-preview-tweet.el ends here
